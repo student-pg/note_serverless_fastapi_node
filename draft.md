@@ -212,3 +212,239 @@ __pycache__
 これで、OSの差異に悩まされない堅牢な開発環境の定義が完了しました。
 
 -----
+### Step 2: FastAPIアプリケーションの実装
+
+環境ができたら、アプリケーションの心臓部となるPythonコードを実装します。
+
+通常、FastAPIは `uvicorn` というASGIサーバーを使って動かしますが、AWS Lambda上で動かすには、Lambdaのイベント形式をASGI形式に変換するアダプターが必要です。
+そこで登場するのが **`Mangum`** というライブラリです。
+
+#### 1\. main.pyの実装
+
+プロジェクトルートに `main.py` を作成します。
+開発中（ローカル）でも、本番（Lambda）でも同じコードで動くように設計します。
+
+```python:main.py
+from fastapi import FastAPI
+from mangum import Mangum
+
+# 1. FastAPIインスタンスの作成
+app = FastAPI(
+    title="Serverless FastAPI Demo",
+    description="Docker環境で開発し、AWS Lambdaにデプロイするデモアプリ"
+)
+
+# 2. ルートエンドポイント
+@app.get("/")
+def read_root():
+    return {
+        "message": "Hello from Serverless FastAPI!",
+        "environment": "AWS Lambda (via Mangum)"
+    }
+
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}
+
+# 3. AWS Lambda用ハンドラー（ここが重要！）
+# MangumがLambdaのイベントを受け取り、FastAPIに渡します
+# serverless.yml ではこの変数を 'main.handler' として指定します
+handler = Mangum(app)
+```
+
+#### 2\. requirements.txtの作成
+
+必要なライブラリを定義します。
+
+```text:requirements.txt
+fastapi
+uvicorn[standard]
+mangum
+```
+
+#### 3\. Docker内での動作確認（ホットリロード）
+
+コードを書いたら、まずはローカルで動作確認をします。ここでのポイントは、**Dockerコンテナの中でサーバーを起動する**ことです。
+
+以下のコマンドを実行すると、コンテナ内でUvicornが起動し、Windows側のブラウザからアクセスできるようになります。
+
+```powershell
+# コンテナ内でUvicornを起動
+# --reload オプションにより、Windows側でコードを保存すると即座に反映されます。（ホットリロード）
+docker compose exec app python3 -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+ブラウザで `http://localhost:8000` にアクセスし、以下のJSONが表示されれば成功です。
+
+```json
+{"message":"Hello from Serverless FastAPI!","environment":"AWS Lambda (via Mangum)"}
+```
+
+また、`http://localhost:8000/docs` にアクセスすると、FastAPIが自動生成するSwagger UI（APIドキュメント）も確認できます。
+
+これで、ローカルでの開発環境は整いました。次はいよいよ、このアプリをAWSへデプロイします。
+
+-----
+
+ありがとうございます。それでは、記事の最大の山場であり、最も技術的な価値が高い **「Step 3: Serverless Frameworkの設定とデプロイ」** の執筆に進みます。
+
+ここでは、あなたが直面した「バージョンの壁」や「権限エラー」を、**読者が回避すべきポイント（Tips）** として昇華させて解説します。
+
+以下のテキストを `draft.md` に追記してください。
+
+-----
+### Step 3: Serverless Frameworkの設定
+
+いよいよAWSへのデプロイ設定です。
+ここには、Windows × Docker環境特有の「落とし穴」がいくつか存在します。それらを回避するための**正解の設定ファイル**がこちらです。
+
+#### 1\. serverless.ymlの作成
+
+プロジェクトルートに `serverless.yml` を作成します。
+
+```yaml:serverless.yml
+service: serverless-fastapi-demo
+
+# 【重要】バージョン3系を明示的に使用
+# 最新のV4系は破壊的変更が含まれるため、安定しているV3系を指定します
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  # Dockerコンテナ内のPythonバージョンに合わせる
+  runtime: python3.11
+  
+  # 日本からのアクセスを高速化するために東京リージョンを指定
+  region: ap-northeast-1
+  
+  # IAM権限設定（デプロイ時に必要なロールを自動生成）
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - lambda:InvokeFunction
+            - lambda:InvokeAsync
+          Resource: "*"
+
+  # API Gateway (HTTP API) の設定
+  httpApi:
+    cors: true  # フロントエンドからの呼び出しを許可
+
+functions:
+  api:
+    # main.py の handler変数を指定
+    handler: main.handler
+    
+    # タイムアウト設定（デフォルト6秒だと短い場合があるため10秒に）
+    timeout: 10
+    
+    # すべてのリクエストをFastAPIに流す設定
+    events:
+      - httpApi:
+          path: /{proxy+}
+          method: any
+
+plugins:
+  - serverless-python-requirements
+
+custom:
+  pythonRequirements:
+    # Dockerコンテナ(Linux)内でビルドするため、Docker in Dockerは不要
+    dockerizePip: false
+    
+    # 【最重要ポイント】
+    # コンテナ内のコマンド名は "python3" なので、プラグインに明示的に伝える
+    # これがないと "python3.11.x not found" エラーで落ちる
+    pythonBin: python3
+```
+
+#### 2\. デプロイ前の準備（プラグイン導入）
+
+`serverless.yml` で指定したプラグインをインストールします。これもDockerコンテナ内で行います。
+
+```powershell
+# PythonライブラリをLambda用にパッケージングする必須プラグイン
+docker compose exec app npm install -D serverless-python-requirements
+```
+
+---
+
+### Step 4: デプロイと動作確認
+
+設定が完了したら、いよいよAWSへデプロイします。
+ここでも、**「Dockerコンテナの中からコマンドを打つ」** ことが鉄則です。
+
+```powershell
+# デプロイコマンドの実行
+docker compose exec app npx serverless deploy
+```
+
+成功すると、ターミナルにエンドポイントのURLが表示されます。
+
+```text
+endpoints:
+  ANY - https://xxxxxxxxxx.execute-api.ap-northeast-1.amazonaws.com/{proxy+}
+```
+
+このURLをクリックして、`{"message": ...}` が表示されればデプロイ完了です！
+また、URLの末尾に `/docs` を付けることで、Swagger UI（APIドキュメント）にもアクセスできます。
+
+-----
+
+### 🚨 トラブルシューティング（ハマりポイント集）
+
+開発中に直面しやすいエラーとその解決策をまとめました。
+
+#### Q1. `No version found for 3` というエラーが出る
+
+**原因:** Serverless Frameworkの最新版(V4)が入っているのに、設定ファイルでV3を指定しているため。
+**解決策:** 以下のコマンドで、明示的にV3系をインストールし直してください。
+
+```powershell
+docker compose exec app npm install -D serverless@3
+```
+
+#### Q2. `User is not authorized to perform: ...` (403エラー)
+
+**原因:** IAMユーザーの権限不足です。
+**解決策:** AWSコンソールで、IAMユーザーに以下の許可ポリシーを追加してください。
+
+  * `AWSCloudFormationFullAccess`
+  * `AmazonS3FullAccess`
+  * `CloudWatchLogsFullAccess`
+  * `AWSLambda_FullAccess`
+  * `AmazonAPIGatewayAdministrator`
+
+#### Q3. デプロイは成功したのに画面が真っ白
+
+**原因:** AWSリージョンを見間違えている可能性があります。
+**解決策:** AWSコンソールの右上が「東京 (ap-northeast-1)」になっているか確認してください。デフォルトで「バージニア」や「シドニー」になっていると、リソースが見つかりません。
+
+-----
+### まとめ：エラーを乗り越えて得た「正解ルート」
+
+お疲れ様でした！
+ここまで長い道のりでしたが、これで **「Windows環境でも、ローカルを一切汚さずに、FastAPIとServerless Frameworkを動かす」** 最強の環境が手に入りました。
+
+今回構築したアーキテクチャのメリットを改めて整理します。
+
+1.  **環境汚染ゼロ:** PCにPythonやNode.jsをインストールする必要がなく、いつでも捨てて作り直せる。
+2.  **チーム開発に強い:** `docker-compose up` だけで全員が同じ環境になれる。
+3.  **実務レベルの構成:** AWS IAM権限やリージョン設定など、現場で必要な知識も網羅している。
+
+このハンズオンを通して作成したリポジトリは、あなたの技術力を証明する立派な **ポートフォリオ** になります。ぜひGitHubにプッシュして、面接や職務経歴書でアピールしてください。
+
+#### ⚠️ 忘れずにやること：リソースの削除
+
+検証が終わったら、無駄な課金を防ぐためにAWS上のリソースを削除しておきましょう。
+もちろん、これもDockerコンテナの中からコマンド一発です。
+
+```powershell
+# デプロイしたリソースを一括削除
+docker compose exec app npx serverless remove
+```
+
+※ これを実行すると、API GatewayとLambda関数は削除されますが、IAMユーザーやCloudWatch Logsの一部は残る場合があります。気になる方はAWSコンソールから手動で確認・削除してください。
+
+-----
