@@ -54,7 +54,11 @@ Node.js (Serverless Framework) とPython (FastAPI) が共存するDocker環境�
 
 ### Step 0: 今回のアーキテクチャ
 
-なぜ、あえてDockerを使うのか？ その理由と全体像を解説します。
+
+今回はインフラ管理ツールとして **Serverless Framework** を採用しました。
+AWS SAMやTerraformと比較して学習コストが低く、`serverless.yml` という設定ファイル一つでLambdaからAPI Gatewayまでを一元管理できるため、小規模なAPI開発における **「開発スピードと管理のしやすさのバランス（正解ルート）」** として最適だと判断しました。
+
+*なぜ、あえてDockerを使うのか？ その理由と全体像を解説します。*
 
 Serverless FrameworkでPythonアプリケーションをデプロイする場合、通常はホストマシンにPythonとNode.jsの両環境が必要です。しかし、この方法はOSごとの差異（パスの区切り文字やライブラリの依存関係）により、環境構築のコストが高くなる傾向にあります。
 
@@ -141,6 +145,11 @@ COPY --from=dependencies /usr/src/app/node_modules ./node_modules
 # Pythonライブラリのインストール
 # root権限でシステム全体にインストールし、全ユーザーから使えるようにする
 COPY requirements.txt ./
+
+# 【Point】--break-system-packages について
+# 最近のPython環境(Debian 12等)では、システム領域へのpip installが制限されています。
+# しかし、このDockerコンテナは「アプリ専用の隔離された環境」であり、
+# システムを破損させるリスクがないため、このオプションを付けて強制的にインストールします。
 RUN pip install -r requirements.txt --break-system-packages
 
 # セキュリティ対策: 実行ユーザーを一般ユーザー(node)に切り替え
@@ -183,18 +192,31 @@ services:
       # 2. コンテナ内のライブラリをホスト側で上書きしないように保護
       # これがないと、Windows側の空フォルダで上書きされ、動かなくなります
       - /usr/src/app/node_modules
-      
-      # 3. Windows側のvenvをコンテナに読み込ませない
-      # OSが違うため、WindowsのvenvはLinuxでは動きません
-      - /usr/src/app/venv
+
+      # 3. キャッシュ除外
       - /usr/src/app/__pycache__
 
     # AWS認証情報を環境変数として渡す
     env_file:
       - .env
 ```
+#### 4. 環境変数ファイル (.env) の作成
+AWSの認証情報はコードに直接書かず、環境変数として管理します。
+プロジェクトルートに `.env` ファイルを作成し、以下のように記述してください。<br>
 
-#### 3\. 除外設定 (.dockerignore)
+> ※IAMユーザーの作成方法は以下のリンク先で解説しております<br>
+>**🔗AWS IAMユーザー作成方法： [IAMユーザーを作る作成ガイド](draft_aws_setup.md\#step-3-最強のiamユーザーを作る)** 
+
+```text:.env
+# AWS IAMユーザーの認証情報
+AWS_ACCESS_KEY_ID=あなたのアクセスキーID
+AWS_SECRET_ACCESS_KEY=あなたのシークレットアクセスキー
+```
+
+※ この `.env` ファイルは機密情報を含むため、`.gitignore` に記述してGitHub等には絶対にアップロードしないでください。
+
+
+#### 4\. 除外設定 (.dockerignore)
 
 不要なファイルをコンテナに送らないよう、`.dockerignore` も設定します。特に `node_modules` と `venv` を除外することは、ビルド時間の短縮とエラー防止に必須です。
 
@@ -283,14 +305,6 @@ docker compose exec app python3 -m uvicorn main:app --host 0.0.0.0 --port 8000 -
 これで、ローカルでの開発環境は整いました。次はいよいよ、このアプリをAWSへデプロイします。
 
 -----
-
-ありがとうございます。それでは、記事の最大の山場であり、最も技術的な価値が高い **「Step 3: Serverless Frameworkの設定とデプロイ」** の執筆に進みます。
-
-ここでは、あなたが直面した「バージョンの壁」や「権限エラー」を、**読者が回避すべきポイント（Tips）** として昇華させて解説します。
-
-以下のテキストを `draft.md` に追記してください。
-
------
 ### Step 3: Serverless Frameworkの設定
 
 いよいよAWSへのデプロイ設定です。
@@ -299,6 +313,13 @@ docker compose exec app python3 -m uvicorn main:app --host 0.0.0.0 --port 8000 -
 #### 1\. serverless.ymlの作成
 
 プロジェクトルートに `serverless.yml` を作成します。
+
+>**※ Serverless Framework V3を採用する理由**
+本記事では、あえて最新のV4系ではなく、安定版の**V3系**を採用しています。
+V4系からは商用利用時のライセンスモデルが変更され、CLI実行時にアカウントへのログインが必須化されました。
+学習用・ポートフォリオ用として「シンプルにIaC（Infrastructure as Code）を体験する」目的には、ログイン不要でオープンに使えるV3系が最適であると判断しました。
+
+<br>
 
 ```yaml:serverless.yml
 service: serverless-fastapi-demo
@@ -348,7 +369,11 @@ plugins:
 
 custom:
   pythonRequirements:
-    # Dockerコンテナ(Linux)内でビルドするため、Docker in Dockerは不要
+    # 【技術解説】
+    # 通常、Windowsからデプロイする場合は、Linux互換のネイティブライブラリ(numpy等)を
+    # ビルドするために Dockerを使う必要があります (dockerizePip: true)。
+    # しかし、今回は「既にLinuxコンテナの中にいる」ため、そのままビルドすれば
+    # Lambda(Linux)と互換性があります。そのため false に設定し、ビルド時間を短縮します。
     dockerizePip: false
     
     # 【最重要ポイント】
