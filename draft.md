@@ -247,7 +247,7 @@ Dockerfile内には `COPY package*.json ./` と `RUN npm install` という記�
 # 一時的なコンテナを起動して、npm init を実行し package.json を生成
 docker run --rm -v "${PWD}:/usr/src/app" -w /usr/src/app node:24-slim npm init -y
 ```
-これで `package.json` が生成されますが、中身を見てみてください。`実はこれだけだと動きません`。 以下のような、ごくシンプルな内容になっているはずです。
+これで `package.json` が生成されますが、中身を見てみてください。**実はこれだけだと動きません**。 以下のような、ごくシンプルな内容になっているはずです。
 
 ```JSON
 {
