@@ -460,6 +460,26 @@ custom:
 docker compose exec app npm install -D serverless-python-requirements
 ```
 
+#### ⚠️ エラーが出た場合（EACCES: permission denied）
+
+`npm install` を実行した際に、以下のようなエラーが出ることがあります。
+
+```PowerShell
+npm error code EACCES
+npm error Error: EACCES: permission denied, rename ...
+```
+
+これは Dockerコンテナ内の権限設定と、Windows側のファイルシステムが競合して起きるエラーです。 この場合は、コマンドに `-u root` （管理者権限で実行）を付けて再実行してください。
+
+```PowerShell
+# root権限で強制的にインストール
+docker compose exec -u root app npm install -D serverless-python-requirements
+```
+
+🔗 トラブルシューティングガイド Windows × Docker 環境では、他にも「ホットリロードが効かない」「PowerShellの権限エラー」などの特有の罠が存在します。 詳しい対処法や、なぜこの構成が推奨されるのかの解説は、以下の記事にまとめています。
+
+👉 【Windows】開発環境構築のトラブルシューティング集：PowerShell実行ポリシー・Dockerホットリロード・パス問題 （※ここにトラブルシューティング記事のURLを貼る）
+
 ---
 
 ### Step 4: デプロイと動作確認
