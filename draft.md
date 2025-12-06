@@ -528,7 +528,8 @@ docker compose exec app npm install -D serverless@3
   * `AWSLambda_FullAccess`
   * `AmazonAPIGatewayAdministrator`
 
-#### Q3. デプロイは成功したのに画面が真っ白
+#### Q3. デプロイは成功したのにAWSのコンソール画面が真っ白
+AWS画面で`Lambda`や`API Gateway`、`CloudFormation`に何も表示されていない！と戸惑うことがありますが、心配はいりません。
 
 **原因:** AWSリージョンを見間違えている可能性があります。
 **解決策:** AWSコンソールの右上が「東京 (ap-northeast-1)」になっているか確認してください。デフォルトで「バージニア」や「シドニー」になっていると、リソースが見つかりません。
