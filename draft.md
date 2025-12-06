@@ -290,12 +290,6 @@ docker run --rm -v "${PWD}:/usr/src/app" -w /usr/src/app node:24-slim npm init -
 }
 ```
 
-#### 6\. コンテナの起動
-`package.json` ができたので、いよいよコンテナをビルド・起動します。
-```PowerShell
-docker compose up -d --build
-```
-
 これで、OSの差異に悩まされない堅牢な開発環境の定義が完了しました。
 
 -----
@@ -349,7 +343,14 @@ uvicorn[standard]
 mangum
 ```
 
-#### 3\. Docker内での動作確認（ホットリロード）
+
+#### 3\. コンテナの起動
+`package.json` ができたので、いよいよコンテナをビルド・起動します。
+```PowerShell
+docker compose up -d --build
+```
+
+#### 4\. Docker内での動作確認（ホットリロード）
 
 コードを書いたら、動作確認を行います。 先ほど `docker compose up` でコンテナは既に起動している状態ですので、以下のコマンドで コンテナの中に入って サーバーを起動します。
 
