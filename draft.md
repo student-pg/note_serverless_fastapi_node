@@ -238,7 +238,7 @@ __pycache__
 .serverless
 ```
 
-#### 5\. 初期設定ファイルの生成
+#### 5\. 初期設定ファイル (package.json) の生成と編集
 Dockerfile内には `COPY package*.json ./` と `RUN npm install` という記述がありますが、現時点ではまだ `package.json` が存在しません。 そのため、いきなりビルドするとエラーになります。
 
 まずはDockerを使って、初期ファイル (`package.json`) を生成しましょう。 以下のコマンドを実行します。
@@ -247,7 +247,48 @@ Dockerfile内には `COPY package*.json ./` と `RUN npm install` という記�
 # 一時的なコンテナを起動して、npm init を実行し package.json を生成
 docker run --rm -v "${PWD}:/usr/src/app" -w /usr/src/app node:24-slim npm init -y
 ```
-これでフォルダ内に package.json が生成されます。
+これで `package.json` が生成されますが、中身を見てみてください。`実はこれだけだと動きません`。 以下のような、ごくシンプルな内容になっているはずです。
+
+```JSON
+{
+  "name": "app",
+  "version": "1.0.0",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  ...
+}
+```
+
+このままでは、Dockerを起動したときに実行したいコマンド（dev）や、必要なライブラリ（serverless 等）が足りません。
+
+**VS Codeで `package.json` を開き、以下のように修正・追記してください。**
+```JSON
+{
+  "name": "serverless-fastapi-demo",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    
+    // 【重要】ここを追加！
+    // ホットリロード対応でサーバーを起動するコマンドを定義します
+    "dev": "nodemon -L index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  
+  // 【重要】ここを追加！
+  // 必要なライブラリを定義しておきます（ビルド時にインストールされます）
+  "devDependencies": {
+    "nodemon": "^3.0.1",
+    "serverless": "^3.38.0",
+    "serverless-python-requirements": "^6.0.0"
+  }
+}
+```
 
 #### 6\. コンテナの起動
 `package.json` ができたので、いよいよコンテナをビルド・起動します。
