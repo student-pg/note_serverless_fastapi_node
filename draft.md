@@ -345,7 +345,7 @@ mangum
 
 
 #### 3\. コンテナの起動
-`package.json` ができたので、いよいよコンテナをビルド・起動します。
+いよいよコンテナをビルド・起動します。
 ```PowerShell
 docker compose up -d --build
 ```
