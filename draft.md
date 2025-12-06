@@ -208,7 +208,8 @@ services:
     env_file:
       - .env
 ```
-#### 4. 環境変数ファイル (.env) の作成
+
+#### 3\. 環境変数ファイル (.env) の作成
 AWSの認証情報はコードに直接書かず、環境変数として管理します。
 プロジェクトルートに `.env` ファイルを作成し、以下のように記述してください。<br>
 
@@ -235,6 +236,23 @@ venv
 .env
 __pycache__
 .serverless
+```
+
+#### 5\. 初期設定ファイルの生成
+Dockerfile内には `COPY package*.json ./` と `RUN npm install` という記述がありますが、現時点ではまだ `package.json` が存在しません。 そのため、いきなりビルドするとエラーになります。
+
+まずはDockerを使って、初期ファイル (`package.json`) を生成しましょう。 以下のコマンドを実行します。
+
+```PowerShell
+# 一時的なコンテナを起動して、npm init を実行し package.json を生成
+docker run --rm -v "${PWD}:/usr/src/app" -w /usr/src/app node:24-slim npm init -y
+```
+これでフォルダ内に package.json が生成されます。
+
+#### 6\. コンテナの起動
+`package.json` ができたので、いよいよコンテナをビルド・起動します。
+```PowerShell
+docker compose up -d --build
 ```
 
 これで、OSの差異に悩まされない堅牢な開発環境の定義が完了しました。
@@ -292,13 +310,14 @@ mangum
 
 #### 3\. Docker内での動作確認（ホットリロード）
 
-コードを書いたら、まずはローカルで動作確認をします。ここでのポイントは、**Dockerコンテナの中でサーバーを起動する**ことです。
-
-以下のコマンドを実行すると、コンテナ内でUvicornが起動し、Windows側のブラウザからアクセスできるようになります。
+コードを書いたら、動作確認を行います。 先ほど `docker compose up` でコンテナは既に起動している状態ですので、以下のコマンドで コンテナの中に入って サーバーを起動します。
 
 ```powershell
-# コンテナ内でUvicornを起動
-# --reload オプションにより、Windows側でコードを保存すると即座に反映されます。（ホットリロード）
+# 1. コンテナ内に入り、必要なライブラリをインストール（初回のみ）
+# ※Dockerfileでインストール設定済みですが、念のため確認
+docker compose exec app pip install -r requirements.txt --break-system-packages
+
+# 2. Uvicornサーバーを起動
 docker compose exec app python3 -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
